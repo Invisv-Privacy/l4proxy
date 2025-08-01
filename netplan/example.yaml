@@ -1,0 +1,25 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: no
+      dhcp6: no
+    eth1:
+      dhcp4: no
+      dhcp6: no
+
+  bonds:
+    bond0:
+      addresses: ["1.2.3.4/31", "2.3.4.5/31", "3.4.5.6/32"]
+      gateway4: 4.5.6.7
+      interfaces:
+        - eth0
+        - eth1
+
+      parameters:
+        mode: 802.3ad
+        transmit-hash-policy: layer3+4
+        mii-monitor-interval: 100
+      nameservers:
+        addresses: [ "8.8.8.8", "8.8.4.4" ]
