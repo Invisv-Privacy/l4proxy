@@ -1,0 +1,71 @@
+# Deploy INVISV L4 proxy with non-DPDK NIC
+
+def parse_core_list(core_str):
+    cores = core_str.split(',')
+    return [int(c) for c in cores]
+
+# Network
+iface = $BESS_DEV!"eth0"
+iface_id = int($BESS_DEV_ID!"0")
+assert(iface_id >= 0)
+
+# CPU
+cores_str = $BESS_CORES!"1,2"
+cores = parse_core_list(cores_str)
+num_cores = len(cores)
+assert(num_cores >= 1)
+
+# Proxy config
+proxy_ip = $BESS_IP!"127.0.0.1"
+proxy_port = int($BESS_PORT!"12345")
+next_hop_ip = $BESS_NEXT_IP!"127.0.0.1"
+next_hop_tcp_port = int($BESS_NEXT_TCP_PORT!"2496")
+next_hop_udp_port = int($BESS_NEXT_UDP_PORT!"2495")
+
+# Note: for kernel drivers, AF_PACKET is too slow;
+# AF_TUN works as an IP tunnel, which can be tricky to configure L2 network correct
+# Default to use AF_TAP
+vdev_conf = "net_tap%d,iface=proxytap%d" %(iface_id, iface_id)
+port0::PMDPort(vdev=vdev_conf)
+
+# INVISV L4 proxy configuration
+l4proxy::INVISVL4Proxy(l4_port_timeout_ms=60000, use_ip_tun=False)
+l4proxy.set_proxy(proxy_addr=proxy_ip,
+    proxy_tcp_port=proxy_port, proxy_udp_port=proxy_port)
+l4proxy.set_next_hop_endpoint(next_hop_addr=next_hop_ip,
+    next_hop_tcp_port=next_hop_tcp_port, next_hop_udp_port=next_hop_udp_port)
+l4proxy.set_client_allowlist(client_addr='192.168.0.1', add=True)
+
+# Cores have to be added before WorkerSplit is created
+for i in cores:
+    bess.add_worker(i, i)
+
+source = PortInc(port=port0)
+sink = PortOut(port=port0)
+
+traffic_core = cores[0]
+if num_cores == 1:
+    source -> l4proxy -> MACSwap() -> sink
+
+    # CPU core assignment
+    source.attach_task(wid=traffic_core)
+else:
+    # Multi-core scaling
+    proxy_cores = cores[1:]
+
+    queue = {}
+    hlb = HashLB(gates=proxy_cores, mode='l4')
+    ws::WorkerSplit()
+
+    source -> hlb
+    for i in proxy_cores:
+        queue[i] = Queue()
+        hlb:i -> queue[i] -> l4proxy
+    l4proxy -> ws
+    for i in proxy_cores:
+        ws:i -> MACSwap() -> sink
+
+    # CPU core assignment
+    source.attach_task(wid=traffic_core)
+    for i in proxy_cores:
+        queue[i].attach_task(wid=i)
