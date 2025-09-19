@@ -23,7 +23,7 @@ NODE_IP=""
 NODE_PORT="443"
 # Next-hop endpoint's public IP:Port
 NEXT_HOP_HOSTNAME=""
-NEXT_HOP_PORT="2495"
+NEXT_HOP_PORT="8444"
 # Put |USER_IP| into L4Proxy's whitelist if it is not empty
 USER_IP=""
 
